@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Text Completion</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 40px;             /* Set initial height for one line */
+            min-height: 40px;         /* Minimum height */
+            padding: 8px 10px;        /* Adjusted padding for compact look */
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+            resize: vertical;         /* Still allow vertical resizing */
+            font-family: Arial, sans-serif;
+            line-height: 24px;        /* Match line height to content */
+            overflow-y: auto;         /* Add scrollbar when content overflows */
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            width: fit-content;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        #result {
+            white-space: normal;  /* Changed from pre-wrap to normal */
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            min-height: 100px;
+            display: none;
+            margin: 0;
+            line-height: 1.6;
+        }
+
+        .loading {
+            display: none;
+            color: #666;
+            font-style: italic;
+        }
+
+        #result strong {
+            font-weight: bold;
+        }
+
+        #result em {
+            font-style: italic;
+        }
+
+        #result h1, #result h2, #result h3 {
+            margin-top: 1em;
+            margin-bottom: 0.5em;
+        }
+
+        #result p {
+            margin: 0 0 1em 0;
+        }
+
+        #result p:last-child {
+            margin-bottom: 0;
+        }
+
+        /* Style numbered lists */
+        #result ol {
+            margin: 1em 0;
+            padding-left: 2em;
+        }
+
+        #result ol li {
+            margin-bottom: 1em;
+        }
+
+        #result ol li:last-child {
+            margin-bottom: 0;
+        }
+
+        /* Remove extra spacing that might come from markdown conversion */
+        #result br + br {
+            display: none;       /* Remove double line breaks */
+        }
+
+        #result ul, #result ol {
+            margin-left: 2em;
+            margin-bottom: 1em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AI Text Completion</h1>
+        
+        <div class="input-group">
+            <label for="prompt">Enter your prompt:</label>
+            <textarea id="prompt" placeholder="Type your prompt here..."></textarea>
+            <button onclick="getCompletion()" id="submitBtn">Get Completion</button>
+            <div class="loading" id="loading">Processing your request...</div>
+        </div>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        async function getCompletion() {
+            const promptText = document.getElementById('prompt').value.trim();
+            const submitBtn = document.getElementById('submitBtn');
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+
+            if (!promptText) {
+                alert('Please enter a prompt');
+                return;
+            }
+
+            // Disable button and show loading
+            submitBtn.disabled = true;
+            loading.style.display = 'block';
+            result.style.display = 'none';
+
+            try {
+                const BACKEND_URL = 'http://localhost:8001';
+                
+                const response = await fetch(`${BACKEND_URL}/completion`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        prompt: promptText,
+                        max_tokens: 1000,
+                        temperature: 0.7
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                // Clean up the text before rendering
+                const cleanText = data.completion
+                    .trim()
+                    .replace(/\n\s+/g, '\n'); // Remove extra spaces at start of lines
+                result.innerHTML = marked.parse(cleanText);
+                result.style.display = 'block';
+            } catch (error) {
+                result.textContent = `Error: ${error.message}`;
+                result.style.display = 'block';
+            } finally {
+                // Re-enable button and hide loading
+                submitBtn.disabled = false;
+                loading.style.display = 'none';
+            }
+        }
+
+        // Allow submission with Ctrl+Enter or Cmd+Enter
+        document.getElementById('prompt').addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                getCompletion();
+            }
+        });
+    </script>
+</body>
+</html> 
