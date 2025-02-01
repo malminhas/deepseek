@@ -5,7 +5,125 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Text Completion</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.5/purify.min.js"></script>
     <style>
+        /* Reset all default spacing */
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+            margin: 0;
+            padding: 0;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+        
+        .sidebar {
+            min-width: 250px;
+            width: 250px;
+            background-color: #f5f5f5;
+            border-right: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            margin: 0;
+            padding: 0;
+            position: relative;
+        }
+        
+        .new-prompt {
+            padding: 8px;
+            margin: 8px;
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .export-history {
+            padding: 8px;
+            margin: 8px;
+            background-color: #34a853;  /* Google green for variety */
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: auto;
+        }
+        
+        .export-history:hover {
+            background-color: #2d9144;
+        }
+        
+        .history-list {
+            flex-grow: 1;
+            overflow-y: auto;
+            margin: 0;
+            padding: 0;
+            padding-bottom: 8px;
+        }
+        
+        .history-item {
+            padding: 8px;
+            border-bottom: 1px solid #ddd;
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 1.2;
+            font-size: 14px;
+            margin: 0;
+            transition: background-color 0.2s ease;
+            outline: none;  /* Remove default focus outline */
+            position: relative;  /* For positioning the focus indicator */
+        }
+        
+        .history-item:hover {
+            background-color: #e9e9e9;
+        }
+        
+        .history-item.active {
+            background-color: #d2e3fc;
+            border-left: 4px solid #4285f4;
+        }
+        
+        .main-content {
+            flex-grow: 1;
+            padding: 20px 40px;
+            overflow-y: auto;
+            height: 100vh;
+            position: relative;
+        }
+        
+        .prompt-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        #promptInput {
+            width: 100%;
+            max-width: 1200px;
+            margin: 10px 0;
+        }
+
         body {
             font-family: Arial, sans-serif;
             max-width: 800px;
@@ -13,13 +131,7 @@
             padding: 0 20px;
             line-height: 1.6;
         }
-
-        .container {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
+        
         .input-group {
             display: flex;
             flex-direction: column;
@@ -122,81 +234,832 @@
             margin-left: 2em;
             margin-bottom: 1em;
         }
+
+        .model-selector {
+            margin-bottom: 20px;
+        }
+
+        select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+            font-family: Arial, sans-serif;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: none;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .sr-only {
+            position: absolute;
+            left: -10000px;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+        }
+
+        .prompt-container button {
+            padding: 10px 20px;
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .prompt-container button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .main-content.history-view .prompt-container {
+            display: none;
+        }
+        
+        .main-content.history-view #submitButton {
+            display: none;
+        }
+        
+        .main-content.history-view #completionTime {
+            display: none;
+        }
+        
+        .main-content.history-view h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            word-wrap: break-word;
+        }
+        
+        .completion-metadata {
+            background-color: #f8f9fa;
+            padding: 8px;  /* Even smaller padding */
+            border-radius: 4px;
+            margin-bottom: 12px;
+            line-height: 1;  /* Minimum line height */
+            font-size: 12px;  /* Smaller font size */
+            color: #666;  /* Slightly muted text color */
+        }
+        
+        .completion-metadata p {
+            margin: 3px 0;  /* Minimal margins between lines */
+        }
+        
+        .completion-metadata strong {
+            margin-right: 4px;
+            font-weight: 600;  /* Slightly less bold */
+            color: #555;  /* Slightly darker than regular text */
+        }
+
+        #submitButton {
+            display: block;  /* Ensure button is visible by default */
+            padding: 8px 16px;
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        
+        #submitButton:hover {
+            background-color: #3367d6;
+        }
+        
+        #submitButton:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .button-container {
+            display: flex;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        
+        #completionTime {
+            margin-left: 15px;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        #output {
+            margin-top: 30px;
+            line-height: 1.5;
+        }
+        
+        #output p {
+            margin-bottom: 1em;
+        }
+        
+        #output strong {
+            font-weight: 600;
+        }
+        
+        #output code {
+            background-color: #f6f8fa;
+            padding: 0.2em 0.4em;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        
+        #output pre {
+            background-color: #f6f8fa;
+            padding: 16px;
+            border-radius: 6px;
+            overflow: auto;
+        }
+
+        .delete-icon {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            cursor: pointer;
+            color: #666;
+            font-size: 20px;
+            transition: color 0.2s;
+        }
+        
+        .delete-icon:hover {
+            color: #ff4444;
+        }
+
+        .history-pane {
+            position: relative;
+            min-width: 200px;
+            max-width: 500px;
+            width: 300px;
+            border-right: 1px solid #ddd;
+        }
+        
+        .resize-handle {
+            position: absolute;
+            right: -5px;
+            top: 0;
+            bottom: 0;
+            width: 10px;
+            cursor: ew-resize;
+            background: transparent;
+        }
+        
+        .resize-handle:hover {
+            background: transparent;
+        }
+        
+        .resize-handle.dragging {
+            background: transparent;
+        }
+        
+        /* Prevent text selection while resizing */
+        .resizing {
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+        }
+
+        /* Add a subtle transition for smoother visual feedback */
+        .history-item {
+            transition: background-color 0.2s ease, border-left 0.2s ease;
+        }
     </style>
+    
+    <!-- Add Font Awesome for the bin icon -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
     <div class="container">
-        <h1>AI Text Completion</h1>
-        
-        <div class="input-group">
-            <label for="prompt">Enter your prompt:</label>
-            <textarea id="prompt" placeholder="Type your prompt here..."></textarea>
-            <button onclick="getCompletion()" id="submitBtn">Get Completion</button>
-            <div class="loading" id="loading">Processing your request...</div>
+        <div class="sidebar">
+            <button class="new-prompt" onclick="newPrompt()">New Prompt</button>
+            <div class="history-list" id="historyList">
+                <!-- History items will be added here dynamically -->
+            </div>
+            <button class="export-history" onclick="exportHistory()">Export History</button>
         </div>
-
-        <div id="result"></div>
+        
+        <div class="main-content">
+            <h1>AI Text Completion</h1>
+            
+            <div class="prompt-container">
+                <label for="modelSelect">Select Model:</label>
+                <select id="modelSelect">
+                    <option value="chat">Deepseek V3</option>
+                    <option value="reasoner">Deepseek R1</option>
+                    <option value="groq">Groq DeepSeek R1</option>
+                    <option value="perplexity">Perplexity Sonar</option>
+                    <option value="ollama">Ollama Deepseek R1</option>
+                    <option value="gumtree">Gumtree Deepseek R1</option>
+                </select>
+            </div>
+            
+            <div class="prompt-container">
+                <label for="promptInput">Enter your prompt:</label>
+                <textarea id="promptInput" rows="4" cols="50"></textarea>
+                <br>
+                <div class="button-container">
+                    <button id="submitButton" onclick="getCompletion()">Get Completion</button>
+                    <div id="spinner" class="spinner"></div>
+                    <span id="completionTime"></span>
+                </div>
+            </div>
+            
+            <div id="output"></div>
+        </div>
     </div>
 
     <script>
-        async function getCompletion() {
-            const promptText = document.getElementById('prompt').value.trim();
-            const submitBtn = document.getElementById('submitBtn');
-            const loading = document.getElementById('loading');
-            const result = document.getElementById('result');
+        const API_BASE_URL = 'http://127.0.0.1:8001';
+        
+        // Add these at the very top of your script
+        const MODEL_VALUES = {
+            'perplexity': 'perplexity-sonar',
+            'chat': 'deepseek-chat',
+            'reasoner': 'deepseek-reasoner',
+            'groq': 'groq-deepseek-r1',
+            'ollama': 'ollama-deepseek-r1',
+            'gumtree': 'gumtree-deepseek-r1'
+        };
+        
+        const MODEL_DISPLAY_NAMES = {
+            'chat': 'Deepseek V3',
+            'reasoner': 'Deepseek R1',
+            'perplexity': 'Perplexity Sonar',
+            'groq': 'Groq Deepseek R1',
+            'ollama': 'Ollama Deepseek R1',
+            'gumtree': 'Gumtree Deepseek R1'
+        };
+        
+        function getModelDisplayName(modelName) {
+            const dropdownValue = Object.entries(MODEL_VALUES)
+                .find(([_, value]) => value === modelName)?.[0];
+            const displayName = dropdownValue ? MODEL_DISPLAY_NAMES[dropdownValue] : modelName;
+            return `${displayName} (${modelName})`;
+        }
+        
+        // Initialize all global variables and constants first
+        let completionHistory = [];
+        let activeHistoryItem = null;
+        let submitButton, outputDiv, completionTimeSpan;
+        let db;
+        
+        // Define all utility functions first
+        function updateHistoryList() {
+            const historyList = document.getElementById('historyList');
+            if (!historyList) return;
+            
+            historyList.innerHTML = '';
+            completionHistory.forEach((item, index) => {
+                const historyItem = document.createElement('div');
+                historyItem.className = 'history-item';
+                if (index === activeHistoryItem) {
+                    historyItem.classList.add('active');
+                }
+                historyItem.textContent = item.prompt;
+                historyItem.onclick = () => loadHistoryItem(index);
+                historyList.appendChild(historyItem);
+            });
+        }
 
-            if (!promptText) {
+
+        // Load history from IndexedDB
+        const loadHistory = async () => {
+            return new Promise((resolve, reject) => {
+                if (!db) {
+                    resolve([]);
+                    return;
+                }
+                
+                const transaction = db.transaction(['history'], 'readonly');
+                const store = transaction.objectStore('history');
+                const request = store.getAll();
+                
+                request.onsuccess = () => {
+                    completionHistory = request.result.sort((a, b) => 
+                        new Date(b.timestamp) - new Date(a.timestamp)
+                    );
+                    updateHistoryList();
+                    resolve(completionHistory);
+                };
+                
+                request.onerror = () => {
+                    console.error("Error loading history");
+                    resolve([]);
+                };
+            });
+        };
+        
+        
+        async function getCurrentModel() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/model`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch current model');
+                }
+                const data = await response.json();
+                return data.model;
+            } catch (error) {
+                console.error('Error fetching current model:', error);
+                return null;
+            }
+        }
+        
+        async function updateModelSelectWithCurrent() {
+            const currentModel = await getCurrentModel();
+            if (currentModel) {
+                const modelSelect = document.getElementById('modelSelect');
+                const dropdownValue = Object.entries(MODEL_VALUES)
+                    .find(([_, value]) => value === currentModel)?.[0];
+                
+                if (dropdownValue && modelSelect) {
+                    modelSelect.value = dropdownValue;
+                }
+            }
+        }
+        
+        function updateModelSelect() {
+            const modelSelect = document.getElementById('modelSelect');
+            modelSelect.innerHTML = `
+                <option value="chat">Deepseek V3</option>
+                <option value="reasoner">Deepseek R1</option>
+                <option value="groq">Groq Deepseek R1</option>
+                <option value="ollama">Ollama Deepseek R1</option>
+                <option value="gumtree">Gumtree Deepseek R1</option>
+                <option value="perplexity">Perplexity Sonar</option>
+            `;
+            
+            modelSelect.addEventListener('change', async (e) => {
+                const selectedModel = MODEL_VALUES[e.target.value];
+                console.log('Model selection changed to:', e.target.value);
+                console.log('Mapped to model name:', selectedModel);
+                
+                try {
+                    await updateModel(selectedModel);
+                } catch (error) {
+                    console.error('Failed to update model:', error);
+                }
+            });
+        }
+        
+        function loadHistoryItem(index) {
+            if (!outputDiv) return;
+            
+            activeHistoryItem = index;
+            updateHistoryList();
+            
+            const item = completionHistory[index];
+            const mainContent = document.querySelector('.main-content');
+            mainContent.classList.add('history-view');
+            
+            // Update title
+            const title = document.querySelector('.main-content h1');
+            title.textContent = item.prompt;
+            
+            // Add delete icon
+            const deleteIcon = document.createElement('i');
+            deleteIcon.className = 'fas fa-trash delete-icon';
+            deleteIcon.title = 'Delete this history item';
+            deleteIcon.onclick = (e) => {
+                e.stopPropagation();
+                if (confirm('Are you sure you want to delete this history item?')) {
+                    deleteHistoryItem(index);
+                }
+            };
+            
+            // Add metadata section with formatted date and model display
+            const metadata = document.createElement('div');
+            metadata.className = 'completion-metadata';
+            const timestamp = new Date(item.timestamp);
+            
+            const dateStr = timestamp.toLocaleDateString('en-GB', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
+            
+            metadata.innerHTML = `
+                <p><strong>Model:</strong> ${getModelDisplayName(item.model)}</p>
+                <p><strong>Date:</strong> ${dateStr}</p>
+                <p><strong>Time:</strong> ${timestamp.toLocaleTimeString()}</p>
+                <p><strong>Duration:</strong> ${item.duration}s</p>
+            `;
+            
+            outputDiv.innerHTML = '';
+            mainContent.appendChild(deleteIcon);
+            outputDiv.appendChild(metadata);
+            outputDiv.innerHTML += marked.parse(item.response);
+        }
+        
+        function newPrompt() {
+            const mainContent = document.querySelector('.main-content');
+            mainContent.classList.remove('history-view');
+            
+            // Remove delete icon if it exists
+            const deleteIcon = mainContent.querySelector('.delete-icon');
+            if (deleteIcon) {
+                deleteIcon.remove();
+            }
+            
+            // Reset title
+            const title = document.querySelector('.main-content h1');
+            title.textContent = 'AI Text Completion';
+            
+            const promptInput = document.getElementById('promptInput');
+            if (promptInput) promptInput.value = '';
+            if (outputDiv) outputDiv.innerHTML = '';
+            if (completionTimeSpan) completionTimeSpan.textContent = '';
+            
+            activeHistoryItem = null;
+            updateHistoryList();
+        }
+        
+        // Initialize IndexedDB
+        const initDB = () => {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('completionHistoryDB', 1);
+                
+                request.onerror = () => {
+                    console.error("Error opening DB");
+                    resolve(false);
+                };
+                
+                request.onsuccess = (event) => {
+                    db = event.target.result;
+                    resolve(true);
+                };
+                
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains('history')) {
+                        db.createObjectStore('history', { keyPath: 'timestamp' });
+                    }
+                };
+            });
+        };
+        
+        // Save item to IndexedDB
+        const saveToHistory = async (item) => {
+            return new Promise((resolve, reject) => {
+                if (!db) {
+                    resolve(false);
+                    return;
+                }
+                
+                const transaction = db.transaction(['history'], 'readwrite');
+                const store = transaction.objectStore('history');
+                const request = store.add(item);
+                
+                request.onsuccess = () => resolve(true);
+                request.onerror = () => {
+                    console.error("Error saving to history");
+                    resolve(false);
+                };
+            });
+        };
+        
+        async function addToHistory(item) {
+            completionHistory.unshift(item);
+            updateHistoryList();
+            await saveToHistory(item);
+        }
+        
+        function initializeResizeHandle() {
+            // Try different possible selectors
+            const historyPane = document.querySelector('.left-pane') || 
+                              document.querySelector('#historyList')?.parentElement ||
+                              document.querySelector('.history-list-container');
+            
+            if (!historyPane) {
+                console.error('History pane element not found. Please ensure the history list container exists.');
+                return;
+            }
+            
+            // Add the history-pane class and necessary styles
+            historyPane.classList.add('history-pane');
+            historyPane.style.position = 'relative';  // Ensure relative positioning for handle
+            
+            // Remove any existing resize handle
+            const existingHandle = historyPane.querySelector('.resize-handle');
+            if (existingHandle) {
+                existingHandle.remove();
+            }
+            
+            const resizeHandle = document.createElement('div');
+            resizeHandle.className = 'resize-handle';
+            historyPane.appendChild(resizeHandle);
+            
+            let isResizing = false;
+            let startX;
+            let startWidth;
+            
+            resizeHandle.addEventListener('mousedown', (e) => {
+                isResizing = true;
+                startX = e.pageX;
+                startWidth = parseInt(getComputedStyle(historyPane).width, 10);
+                
+                resizeHandle.classList.add('dragging');
+                document.body.classList.add('resizing');
+                
+                // Prevent text selection during resize
+                e.preventDefault();
+            });
+            
+            document.addEventListener('mousemove', (e) => {
+                if (!isResizing) return;
+                
+                const width = startWidth + (e.pageX - startX);
+                
+                // Constrain width between min and max
+                if (width >= 200 && width <= 500) {
+                    historyPane.style.width = `${width}px`;
+                }
+            });
+            
+            document.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    resizeHandle.classList.remove('dragging');
+                    document.body.classList.remove('resizing');
+                    
+                    // Save the width preference
+                    try {
+                        localStorage.setItem('historyPaneWidth', historyPane.style.width);
+                    } catch (e) {
+                        console.warn('Could not save history pane width:', e);
+                    }
+                }
+            });
+            
+            // Restore saved width preference
+            try {
+                const savedWidth = localStorage.getItem('historyPaneWidth');
+                if (savedWidth) {
+                    historyPane.style.width = savedWidth;
+                }
+            } catch (e) {
+                console.warn('Could not restore history pane width:', e);
+            }
+            
+            // Log success
+            console.log('Resize handle initialized successfully');
+        }
+        
+        // Add this function to handle keyboard navigation
+        function initializeKeyboardNavigation() {
+            document.addEventListener('keydown', (e) => {
+                // Only handle arrow keys if we have history items
+                if (completionHistory.length === 0) return;
+                
+                // Get current active index
+                const currentIndex = activeHistoryItem !== null ? activeHistoryItem : -1;
+                
+                switch (e.key) {
+                    case 'ArrowUp':
+                        e.preventDefault();
+                        // Move up the list (or wrap to bottom)
+                        const prevIndex = currentIndex <= 0 ? completionHistory.length - 1 : currentIndex - 1;
+                        loadHistoryItem(prevIndex);
+                        ensureHistoryItemVisible(prevIndex);
+                        break;
+                        
+                    case 'ArrowDown':
+                        e.preventDefault();
+                        // Move down the list (or wrap to top)
+                        const nextIndex = currentIndex >= completionHistory.length - 1 ? 0 : currentIndex + 1;
+                        loadHistoryItem(nextIndex);
+                        ensureHistoryItemVisible(nextIndex);
+                        break;
+                }
+            });
+        }
+
+        // Add this function to ensure the selected item is visible
+        function ensureHistoryItemVisible(index) {
+            const historyList = document.getElementById('historyList');
+            const historyItem = historyList.children[index];
+            if (historyItem) {
+                historyItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        // Update window.onload to initialize keyboard navigation
+        window.onload = async function() {
+            submitButton = document.getElementById('submitButton');
+            outputDiv = document.getElementById('output');
+            completionTimeSpan = document.getElementById('completionTime');
+            
+            // Initialize IndexedDB and load history
+            await initDB();
+            await loadHistory();
+            
+            updateModelSelect();
+            initializeResizeHandle();
+            await updateModelSelectWithCurrent();
+            
+            // Initialize keyboard navigation
+            initializeKeyboardNavigation();
+        };
+        
+        async function getCompletion() {
+            if (!submitButton || !outputDiv) return;
+            
+            const promptText = document.getElementById('promptInput').value;
+            const modelSelect = document.getElementById('modelSelect');
+            const selectedModel = MODEL_VALUES[modelSelect.value];
+            
+            console.log('Getting completion with model:', selectedModel);
+            
+            if (!promptText.trim()) {
                 alert('Please enter a prompt');
                 return;
             }
-
-            // Disable button and show loading
-            submitBtn.disabled = true;
-            loading.style.display = 'block';
-            result.style.display = 'none';
-
+            
+            submitButton.disabled = true;
+            spinner.style.display = 'inline-block';
+            outputDiv.innerHTML = '';
+            if (completionTimeSpan) completionTimeSpan.textContent = '';
+            
+            const startTime = performance.now();
+            
             try {
-                const BACKEND_URL = 'http://localhost:8001';
+                // Ensure model is set before getting completion
+                await updateModel(selectedModel);
                 
-                const response = await fetch(`${BACKEND_URL}/completion`, {
+                const response = await fetch(`${API_BASE_URL}/completion`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
                         prompt: promptText,
-                        max_tokens: 1000,
-                        temperature: 0.7
+                        model: selectedModel,
                     })
                 });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                
+                outputDiv.innerHTML = '';
+                let accumulatedText = '';
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    
+                    const text = decoder.decode(value);
+                    accumulatedText += text;
+                    // Render markdown as it streams in
+                    outputDiv.innerHTML = marked.parse(accumulatedText);
                 }
-
-                const data = await response.json();
-                // Clean up the text before rendering
-                const cleanText = data.completion
-                    .trim()
-                    .replace(/\n\s+/g, '\n'); // Remove extra spaces at start of lines
-                result.innerHTML = marked.parse(cleanText);
-                result.style.display = 'block';
+                
+                // Store the raw markdown in history
+                await addToHistory({
+                    prompt: promptText,
+                    model: selectedModel,
+                    response: accumulatedText,  // Store raw markdown
+                    timestamp: new Date().toISOString(),
+                    duration: ((performance.now() - startTime) / 1000).toFixed(2)
+                });
+                
+                if (completionTimeSpan) {
+                    completionTimeSpan.textContent = `Completed in ${((performance.now() - startTime) / 1000).toFixed(2)}s`;
+                }
+                
             } catch (error) {
-                result.textContent = `Error: ${error.message}`;
-                result.style.display = 'block';
+                console.error('Error:', error);
+                outputDiv.innerHTML = `Error: ${error.message}`;
             } finally {
-                // Re-enable button and hide loading
-                submitBtn.disabled = false;
-                loading.style.display = 'none';
+                submitButton.disabled = false;
+                spinner.style.display = 'none';
             }
         }
-
-        // Allow submission with Ctrl+Enter or Cmd+Enter
-        document.getElementById('prompt').addEventListener('keydown', function(e) {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                getCompletion();
+        
+        async function updateModel(modelName) {
+            console.log('Updating model to:', modelName);
+            
+            const requestBody = {
+                model: modelName
+            };
+            
+            console.log('Request body:', JSON.stringify(requestBody, null, 2));
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/model`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Model update failed:', errorText);
+                    throw new Error(`Failed to update model: ${errorText}`);
+                }
+                
+                const responseData = await response.json();
+                console.log('Model update response:', responseData);
+                
+            } catch (error) {
+                console.error('Error updating model:', error);
+                throw error;
             }
-        });
+        }
+        
+        async function deleteHistoryItem(index) {
+            const itemToDelete = completionHistory[index];
+            
+            // Remove from memory
+            completionHistory.splice(index, 1);
+            
+            // Remove from IndexedDB
+            try {
+                const transaction = db.transaction(['history'], 'readwrite');
+                const store = transaction.objectStore('history');
+                await store.delete(itemToDelete.timestamp);  // Delete specific item by timestamp
+            } catch (error) {
+                console.error('Error deleting from IndexedDB:', error);
+            }
+            
+            // Return to default view
+            newPrompt();
+        }
+
+        async function exportHistory() {
+            try {
+                const transaction = db.transaction(['history'], 'readonly');
+                const store = transaction.objectStore('history');
+                const items = await new Promise((resolve, reject) => {
+                    const request = store.getAll();
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+
+                // Convert to CSV format
+                const headers = ['Timestamp', 'Model', 'Duration (s)', 'Prompt', 'Response'];
+                const csvRows = [headers];
+
+                items.forEach(item => {
+                    // Properly escape fields for CSV
+                    const escapeCsvField = (field) => {
+                        if (field === null || field === undefined) {
+                            return '';
+                        }
+                        const stringField = String(field).trim();  // Trim whitespace
+                        // If the field contains quotes, commas, or newlines, we need to:
+                        // 1. Escape quotes by doubling them
+                        // 2. Wrap the entire field in quotes
+                        if (stringField.includes('"') || stringField.includes(',') || stringField.includes('\n')) {
+                            return `"${stringField.replace(/"/g, '""')}"`;
+                        }
+                        return stringField;
+                    };
+
+                    csvRows.push([
+                        new Date(item.timestamp).toISOString(),
+                        escapeCsvField(item.model),
+                        item.duration,
+                        escapeCsvField(item.prompt.trim()),      // Trim prompt
+                        escapeCsvField(item.response.trim())     // Trim response
+                    ]);
+                });
+
+                const csvContent = csvRows.map(row => row.join(',')).join('\n');
+                
+                // Add BOM for Excel UTF-8 compatibility
+                const BOM = '\uFEFF';
+                const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                
+                link.setAttribute('href', url);
+                link.setAttribute('download', `ai_chat_history_${new Date().toISOString().split('T')[0]}.csv`);
+                link.style.visibility = 'hidden';
+                
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+
+            } catch (error) {
+                console.error('Error exporting history:', error);
+                alert('Failed to export history. Please check console for details.');
+            }
+        }
     </script>
 </body>
-</html> 
+</html>

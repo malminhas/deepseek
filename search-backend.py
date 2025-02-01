@@ -8,15 +8,25 @@ This service provides a single endpoint that accepts text prompts and returns
 AI-generated completions using the Deepseek language model.
 
 Version History:
-    1.0.0 - (Latest Release) - 26.01.25
+    1.1.0 - (Latest Release) - 26.01.25
+        - Added Gumtree hosted Deepseek API integration
+        - Added Perplexity API integration
+        - Added Ollama API integration
+    1.0.0 - 26.01.25
         - Added Deepseek API integration
 
-        
 Installation:
-    pip install fastapi uvicorn httpx pydantic
+    pip install fastapi uvicorn httpx pydantic openai groq ollama
 
 Environment Variables:
     DEEPSEEK_API_KEY: Your Deepseek API key (required)
+    GROQ_API_KEY: Your Groq API key (required)
+    PERPLEXITY_API_KEY: Your Perplexity API key (required)
+
+Google Cloud Setup:
+    1. Install Google Cloud SDK
+
+
 
 Running the service:
     Development with hot reload:
@@ -29,10 +39,14 @@ Dependencies:
     - FastAPI
     - uvicorn (for serving)
     - pydantic (for data validation)
+    - httpx (for HTTP requests)
+    - openai (for OpenAI API integration)
+    - groq (for Groq API integration)
+    - ollama (for Ollama API integration)
 
 Documentation:
-    Swagger UI: http://localhost:8000/docs
-    ReDoc: http://localhost:8000/redoc
+    Swagger UI: http://localhost:8001/docs
+    ReDoc: http://localhost:8001/redoc
 
 Endpoints:
     POST /completion: Generate text completion from a prompt
@@ -43,16 +57,24 @@ License: MIT
 from fastapi import FastAPI, HTTPException # type: ignore
 from pydantic import BaseModel, Field, validator # type: ignore
 from openai import OpenAI # type: ignore
+from groq import Groq # type: ignore
 import os
 from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware # type: ignore
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from enum import Enum
+import openai # type: ignore
+import httpx  # type: ignore
+import json
+import fastapi # type: ignore
+from openai import AsyncOpenAI, APIError, APITimeoutError # type: ignore
+from fastapi.responses import StreamingResponse, Response  # type: ignore
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 AUTHOR = "Mal Minhas"
-RELEASE_DATE = "26.01.2025"
+RELEASE_DATE = "31.01.2025"
 LICENSE = "MIT"
 
 app = FastAPI(
@@ -81,7 +103,10 @@ app.add_middleware(
 
 # Configuration
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-DEEPSEEK_API_URL = "https://api.deepseek.com/beta/completions"
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+GUMTREE_IAP_TOKEN = os.getenv("GUMTREE_IAP_TOKEN")
+TIMEOUT = 30.0  # Timeout in seconds for all API calls
 
 # Create logs directory if it doesn't exist
 Path("logs").mkdir(exist_ok=True)
@@ -113,12 +138,56 @@ def configure_logging():
 
 configure_logging()
 
+# Model configuration
+class ModelName(str, Enum):
+    CHAT = "deepseek-chat"
+    REASONER = "deepseek-reasoner"
+    GROQ = "groq-deepseek-r1"
+    PERPLEXITY = "perplexity-sonar"
+    OLLAMA = "ollama-deepseek-r1"
+    GUMTREE = "gumtree-deepseek-r1"  # Gumtree model
+
+class ModelConfig(BaseModel):
+    model: ModelName = Field(
+        default=ModelName.CHAT,
+        description="The AI model to use for completions"
+    )
+
+# Global model configuration
+current_model = {"model": ModelName.CHAT}
+
+# Model endpoints
+@app.get(
+    "/model",
+    response_model=ModelConfig,
+    summary="Get current model",
+    description="Returns the currently selected AI model",
+    tags=["Model Configuration"]
+)
+async def get_model():
+    logger.info(f"Getting current model: {current_model['model']}")
+    return current_model
+
+@app.put(
+    "/model",
+    response_model=ModelConfig,
+    summary="Set current model",
+    description="Updates the AI model to use for completions",
+    tags=["Model Configuration"]
+)
+async def set_model(config: ModelConfig):
+    logger.info(f"Setting model to: {config.model}")
+    global current_model
+    current_model = {"model": config.model}
+    return current_model
+
+# Completion endpoint models
 class PromptRequest(BaseModel):
     prompt: str = Field(
         ...,
         description="The text prompt to send to the Deepseek API",
         example="Write a function that calculates fibonacci numbers",
-        min_length=1  # Add minimum length validation
+        min_length=1
     )
     max_tokens: Optional[int] = Field(
         default=1000,
@@ -129,7 +198,7 @@ class PromptRequest(BaseModel):
     )
     temperature: Optional[float] = Field(
         default=0.7,
-        description="Controls randomness in the response. Higher values make output more random, lower values make it more deterministic",
+        description="Controls randomness in the response",
         ge=0.0,
         le=1.0,
         example=0.7
@@ -146,76 +215,98 @@ class CompletionResponse(BaseModel):
     completion: str = Field(
         ...,
         description="The generated text completion from Deepseek API",
-        example="Here's a Python function to calculate Fibonacci numbers:\n\ndef fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)"
+        example="Here's a Python function to calculate Fibonacci numbers..."
     )
 
-@app.post(
-    "/completion",
-    response_model=CompletionResponse,
-    summary="Get AI text completion",
-    description="""
-    Sends a text prompt to the Deepseek API and returns the generated completion.
-    
-    The endpoint accepts:
-    - A required text prompt
-    - Optional max_tokens parameter to limit response length
-    - Optional temperature parameter to control response randomness
-    
-    Returns the AI-generated completion text.
-    """,
-    response_description="The AI-generated text completion",
-    tags=["Completion"],
-    status_code=200,
-    responses={
-        200: {
-            "description": "Successful completion generation",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "completion": "Here's a Python function to calculate Fibonacci numbers:\n\ndef fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)"
-                    }
-                }
-            }
-        },
-        500: {
-            "description": "Internal server error or API key not configured",
-            "content": {
-                "application/json": {
-                    "example": {"detail": "API key not configured"}
-                }
-            }
-        },
-        504: {
-            "description": "Gateway timeout - Deepseek API took too long to respond",
-            "content": {
-                "application/json": {
-                    "example": {"detail": "Request timeout"}
-                }
-            }
-        }
-    }
-)
-async def get_completion(request: PromptRequest):
-    logger.info(f"Received completion request with prompt: {request.prompt[:100]}...")
-    
+async def handle_deepseek_completion(request: PromptRequest) -> StreamingResponse:
+    """Handle completion requests for Deepseek models"""
     if not DEEPSEEK_API_KEY:
-        logger.error("API key not configured")
+        logger.error("Deepseek API key not configured")
         raise HTTPException(
             status_code=500,
-            detail="API key not configured. Please set DEEPSEEK_API_KEY environment variable."
+            detail="DEEPSEEK_API_KEY environment variable must be set"
         )
     
     try:
-        # Initialize the client inside the function
-        client = OpenAI(
+        client = AsyncOpenAI(
             api_key=DEEPSEEK_API_KEY,
-            base_url="https://api.deepseek.com"
+            base_url="https://api.deepseek.com/v1",
+            timeout=TIMEOUT,
+            max_retries=0
         )
         
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model="deepseek-chat",
             messages=[
-                {"role": "system", "content": "You are a helpful assistant"},
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant. Format your responses using markdown."
+                },
+                {"role": "user", "content": request.prompt}
+            ],
+            temperature=request.temperature,
+            max_tokens=request.max_tokens,
+            stream=True
+        )
+
+        async def stream_response():
+            try:
+                buffer = ""
+                async for chunk in response:
+                    if chunk.choices[0].delta.content is not None:
+                        buffer += chunk.choices[0].delta.content
+                        # Send buffer when we hit a natural break point or accumulated enough characters
+                        if any(c in buffer for c in ["\n", ".", "!", "?"]) or len(buffer) > 80:
+                            yield buffer
+                            buffer = ""
+                # Send any remaining content in the buffer
+                if buffer:
+                    yield buffer
+            except Exception as e:
+                logger.exception("Error during streaming")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        return StreamingResponse(
+            stream_response(),
+            media_type="text/plain",
+        )
+
+    except APITimeoutError as e:
+        logger.exception("OpenAI API timeout")
+        raise HTTPException(status_code=408, detail="Request timed out")
+    except APIError as e:
+        logger.exception("OpenAI API error")
+        raise HTTPException(status_code=getattr(e, 'status_code', 500), detail=str(e))
+    except Exception as e:
+        logger.exception("Unexpected error during completion request")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def handle_groq_completion(request: PromptRequest) -> str:
+    """Handle completion requests for Groq model"""
+    if not GROQ_API_KEY:
+        logger.error("Groq API key not configured")
+        raise HTTPException(
+            status_code=500,
+            detail="GROQ_API_KEY environment variable must be set"
+        )
+    
+    try:
+        client = Groq(
+            api_key=GROQ_API_KEY,
+            timeout=TIMEOUT,
+            max_retries=0
+        )
+        
+        # Add markdown formatting instruction to system prompt
+        response = client.chat.completions.create(
+            model="deepseek-r1-distill-llama-70b",
+            messages=[
+                {
+                    "role": "system", 
+                    "content": "You are a helpful assistant. Format your responses using markdown. "
+                              "When providing Python code examples, use proper 4-space indentation and "
+                              "format with ```python language identifier. Ensure proper line breaks between sections."
+                },
                 {"role": "user", "content": request.prompt}
             ],
             temperature=request.temperature,
@@ -224,12 +315,296 @@ async def get_completion(request: PromptRequest):
         )
         
         completion_text = response.choices[0].message.content
-        logger.info(f"Response: {completion_text}")
         
-        return CompletionResponse(completion=completion_text)
+        # Split into sections based on double newlines
+        sections = completion_text.split('\n\n')
+        formatted_sections = []
+        
+        for section in sections:
+            section = section.strip()
+            if not section:
+                continue
             
+            # Handle Python code blocks
+            if section.startswith('```python'):
+                lines = section.split('\n')
+                formatted_lines = []
+                in_code = False
+                base_indent = 0
+                
+                for line in lines:
+                    if line.startswith('```python'):
+                        formatted_lines.append(line)
+                        in_code = True
+                    elif line.startswith('```'):
+                        formatted_lines.append(line)
+                        in_code = False
+                    elif in_code:
+                        # Count leading spaces to determine indent level
+                        stripped = line.lstrip()
+                        if stripped:  # Non-empty line
+                            indent_level = (len(line) - len(stripped)) // 4
+                            formatted_lines.append('    ' * indent_level + stripped)
+                    else:
+                        formatted_lines.append(line)
+                
+                section = '\n'.join(formatted_lines)
+                formatted_sections.append(section)
+                continue
+                
+            # Handle other sections as before
+            if section.replace('.', '').strip().startswith('1'):
+                lines = section.split('\n')
+                formatted_lines = []
+                for line in lines:
+                    line = line.strip()
+                    if line:
+                        if line[0].isdigit():
+                            formatted_lines.append(f"{line}")
+                        else:
+                            formatted_lines.append(f"   {line}")
+                section = '\n'.join(formatted_lines)
+            
+            formatted_sections.append(section)
+        
+        # Join sections with proper markdown spacing
+        markdown_text = '\n\n'.join(formatted_sections)
+        
+        # Add a header if none exists
+        if not any(line.strip().startswith('#') for line in markdown_text.split('\n')):
+            markdown_text = f"### Response\n\n{markdown_text}"
+        
+        return markdown_text
+        
+    except openai.APITimeoutError as e:
+        error_msg = (
+            f"Request to Groq API timed out after {TIMEOUT} seconds. "
+            f"Model: deepseek-r1-distill-llama-70b, "
+            f"Prompt length: {len(request.prompt)} chars"
+        )
+        logger.warning(error_msg)
+        raise HTTPException(
+            status_code=504,
+            detail=error_msg
+        )
     except Exception as e:
-        logger.exception(f"Unexpected error during API request: {str(e)}")
+        logger.exception(f"Groq API error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Groq API error: {str(e)}")
+
+async def handle_perplexity_completion(request: PromptRequest) -> StreamingResponse:
+    """Handle completion requests for Perplexity Sonar model"""
+    try:
+        client = AsyncOpenAI(
+            api_key=PERPLEXITY_API_KEY,
+            base_url="https://api.perplexity.ai",
+            timeout=TIMEOUT,
+            max_retries=0
+        )
+        
+        response = await client.chat.completions.create(
+            model="sonar",
+            messages=[
+                {
+                    "role": "system", 
+                    "content": "You are a helpful assistant. Format your responses using markdown. "
+                              "Use numbered references in square brackets [1], [2], etc. in your text. "
+                              #"List all references at the end of your response as hyperlinks with descriptive titles."
+                },
+                {"role": "user", "content": request.prompt}
+            ],
+            temperature=request.temperature,
+            max_tokens=request.max_tokens,
+            stream=True
+        )
+
+        async def stream_response():
+            try:
+                buffer = ""
+                citations = []
+                
+                async for chunk in response:
+                    if chunk.choices[0].delta.content is not None:
+                        buffer += chunk.choices[0].delta.content
+                        if any(c in buffer for c in ["\n", ".", "!", "?"]) or len(buffer) > 80:
+                            yield buffer
+                            buffer = ""
+                            
+                    if hasattr(chunk, 'citations') and chunk.citations:
+                        citations = chunk.citations
+                
+                if buffer:
+                    yield buffer
+                
+
+                # Add references with hyperlinks
+                if citations:
+                    yield "\n\n## Citations:\n\n"
+                    for i, url in enumerate(citations, 1):
+                        # Each citation on its own line with consistent indentation
+                        yield f"[{i}] [{url}]({url})\n\n"  # Added extra newline for list spacing
+
+                
+            except Exception as e:
+                logger.exception("Error during streaming")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        return StreamingResponse(
+            stream_response(),
+            media_type="text/plain",
+        )
+
+    except APITimeoutError as e:
+        logger.exception("OpenAI API timeout")
+        raise HTTPException(status_code=408, detail="Request timed out")
+    except APIError as e:
+        logger.exception("OpenAI API error")
+        raise HTTPException(status_code=getattr(e, 'status_code', 500), detail=str(e))
+    except Exception as e:
+        logger.exception("Unexpected error during completion request")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def handle_ollama_completion(request: PromptRequest) -> fastapi.responses.StreamingResponse:
+    """Handle completion requests for Ollama instance with streaming support."""
+    
+    model = "deepseek-r1"
+    OLLAMA_API_URL = "http://localhost:11434/api/generate"
+    
+    logger.info("Attempting request to Ollama API")
+    
+    async def generate():
+        try:
+            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+                async with client.stream(
+                    'POST',
+                    OLLAMA_API_URL,
+                    json={
+                        "model": model,
+                        "prompt": request.prompt,
+                        "stream": True
+                    }
+                ) as response:
+                    if response.status_code != 200:
+                        error_msg = f"Ollama API request failed with status {response.status_code}"
+                        logger.error(error_msg)
+                        yield f"Error: {error_msg}"
+                        return
+
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
+                        try:
+                            data = json.loads(line)
+                            if 'response' in data:
+                                yield data['response']
+                            if data.get('done', False):
+                                break
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Failed to parse Ollama response: {e}")
+                            continue
+
+        except httpx.TimeoutException:
+            error_msg = f"Request to Ollama API timed out after {TIMEOUT} seconds"
+            logger.error(error_msg)
+            yield f"Error: {error_msg}"
+            
+        except Exception as e:
+            error_msg = f"Unexpected error connecting to Ollama API: {str(e)}"
+            logger.exception(error_msg)
+            yield f"Error: {error_msg}"
+
+    return fastapi.responses.StreamingResponse(
+        generate(),
+        media_type="text/event-stream"
+    )
+
+async def handle_gumtree_completion(request: PromptRequest) -> str:
+    """Handle completion requests for Gumtree's DeepSeek instance."""
+    
+    GUMTREE_API_URL = "https://ai.gum-ops-prod.gumtree.cloud/v1/chat/completions"
+    logger.info(f"Attempting request to Gumtree API: {GUMTREE_API_URL}")
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            response = await client.post(
+                GUMTREE_API_URL,
+                headers=headers,
+                json={
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You are a helpful assistant. Format your responses using markdown. When providing Python code examples, use proper 4-space indentation and format with ```python language identifier. Ensure proper line breaks between sections.",
+                            "name": "system"
+                        },
+                        {
+                            "role": "user",
+                            "content": request.prompt,
+                            "name": "user"
+                        }
+                    ],
+                    "model": "deepseek-r1-8b",
+                    "temperature": request.temperature,
+                    "max_tokens": request.max_tokens
+                }
+            )
+            
+            logger.debug(f"Response status: {response.status_code}")
+            logger.debug(f"Response headers: {response.headers}")
+            
+            if response.status_code == 200:
+                completion_text = response.json()["choices"][0]["message"]["content"]
+                return completion_text
+            
+            error_msg = f"Request failed with status {response.status_code}: {response.text}"
+            logger.warning(error_msg)
+            raise HTTPException(status_code=response.status_code, detail=error_msg)
+            
+    except httpx.TimeoutException as e:
+        error_msg = f"Request to Gumtree API timed out after {TIMEOUT} seconds"
+        logger.warning(error_msg)
+        raise HTTPException(status_code=504, detail=error_msg)
+        
+    except Exception as e:
+        error_msg = f"Unexpected error connecting to Gumtree API: {str(e)}"
+        logger.exception(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
+
+@app.post("/completion")
+async def get_completion(request: PromptRequest) -> fastapi.Response:
+    """Get a completion from the selected model."""
+    logger.info(f"Received completion request: {request}")
+    
+    try:
+        # All these models now return StreamingResponse apart from Groq
+        if current_model["model"] == ModelName.CHAT or current_model["model"] == ModelName.REASONER:
+            return await handle_deepseek_completion(request)
+        elif current_model["model"] == ModelName.GROQ:
+            completion_text = await handle_groq_completion(request)
+        elif current_model["model"] == ModelName.PERPLEXITY:
+            return await handle_perplexity_completion(request)
+        elif current_model["model"] == ModelName.OLLAMA:
+            return await handle_ollama_completion(request)
+        elif current_model["model"] == ModelName.GUMTREE:
+            completion_text = await handle_gumtree_completion(request)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown model: {current_model['model']}"
+            )
+        
+        # Return non-streaming responses for models that don't stream yet
+        return fastapi.Response(
+            content=completion_text,
+            media_type="text/plain"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Unexpected error during completion request")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 @app.on_event("startup")

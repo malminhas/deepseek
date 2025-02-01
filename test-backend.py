@@ -144,5 +144,187 @@ class TestCompletionEndpoint:
         assert all(r.status_code == 200 for r in responses)
         assert all("completion" in r.json() for r in responses)
 
+class TestModelEndpoints:
+    """Tests for the model configuration endpoints"""
+
+    def test_get_default_model(self) -> None:
+        """Test getting default model"""
+        response = requests.get(f"{BASE_URL}/model")
+        assert response.status_code == 200
+        data = response.json()
+        assert "model" in data
+        assert data["model"] in ["deepseek-chat", "deepseek-reasoner"]
+
+    def test_set_model(self) -> None:
+        """Test setting model"""
+        # Set to reasoner
+        response = requests.put(
+            f"{BASE_URL}/model",
+            json={"model": "deepseek-reasoner"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["model"] == "deepseek-reasoner"
+
+        # Verify get returns new model
+        response = requests.get(f"{BASE_URL}/model")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["model"] == "deepseek-reasoner"
+
+        # Set back to chat
+        response = requests.put(
+            f"{BASE_URL}/model",
+            json={"model": "deepseek-chat"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["model"] == "deepseek-chat"
+
+    def test_invalid_model(self) -> None:
+        """Test setting invalid model"""
+        response = requests.put(
+            f"{BASE_URL}/model",
+            json={"model": "invalid-model"}
+        )
+        assert response.status_code == 422  # Validation error
+
+    def test_completion_with_different_models(self) -> None:
+        """Test completions work with both models"""
+        models = ["deepseek-chat", "deepseek-reasoner"]
+        
+        for model in models:
+            # Set model
+            requests.put(f"{BASE_URL}/model", json={"model": model})
+            
+            # Test completion
+            response = requests.post(
+                f"{BASE_URL}/completion",
+                json={"prompt": "What is Python?"}
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert "completion" in data
+            assert isinstance(data["completion"], str)
+            assert len(data["completion"]) > 0
+
+@pytest.mark.asyncio
+async def test_perplexity_completion():
+    """Test completion with Perplexity Sonar model"""
+    # Set model to Perplexity
+    response = await client.put("/model", json={"model": "sonar"})
+    assert response.status_code == 200
+    assert response.json()["model"] == "sonar"
+    
+    # Test completion
+    response = await client.post(
+        "/completion",
+        json={
+            "prompt": "What is 2+2?",
+            "max_tokens": 100,
+            "temperature": 0.7
+        }
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert "completion" in data
+    assert isinstance(data["completion"], str)
+    assert len(data["completion"]) > 0
+
+@pytest.mark.asyncio
+async def test_perplexity_missing_api_key(monkeypatch):
+    """Test error handling when Perplexity API key is missing"""
+    # Set model to Perplexity
+    response = await client.put("/model", json={"model": "sonar"})
+    assert response.status_code == 200
+    
+    # Remove API key
+    monkeypatch.delenv("PERPLEXITY_API_KEY", raising=False)
+    
+    response = await client.post(
+        "/completion",
+        json={
+            "prompt": "Test prompt",
+            "max_tokens": 100,
+            "temperature": 0.7
+        }
+    )
+    
+    assert response.status_code == 500
+    assert "PERPLEXITY_API_KEY environment variable must be set" in response.json()["detail"]
+
+@pytest.mark.asyncio
+async def test_perplexity_timeout():
+    """Test timeout handling for Perplexity API"""
+    # Set model to Perplexity
+    response = await client.put("/model", json={"model": "sonar"})
+    assert response.status_code == 200
+    
+    # Test with a long prompt
+    response = await client.post(
+        "/completion",
+        json={
+            "prompt": "Please explain " + "very detailed " * 100,
+            "max_tokens": 100,
+            "temperature": 0.7
+        }
+    )
+    
+    # Either succeeds or times out gracefully
+    if response.status_code == 504:
+        assert "timed out" in response.json()["detail"].lower()
+    else:
+        assert response.status_code == 200
+        assert "completion" in response.json()
+
+@pytest.mark.asyncio
+async def test_ollama_completion():
+    """Test completion with Ollama deepseek model"""
+    # Set model to Ollama
+    response = await client.put("/model", json={"model": "ollama-deepseek"})
+    assert response.status_code == 200
+    assert response.json()["model"] == "ollama-deepseek"
+    
+    # Test completion
+    response = await client.post(
+        "/completion",
+        json={
+            "prompt": "What is 2+2?",
+            "max_tokens": 100,
+            "temperature": 0.7
+        }
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert "completion" in data
+    assert isinstance(data["completion"], str)
+    assert len(data["completion"]) > 0
+
+@pytest.mark.asyncio
+async def test_ollama_timeout():
+    """Test timeout handling for Ollama API"""
+    # Set model to Ollama
+    response = await client.put("/model", json={"model": "ollama-deepseek"})
+    assert response.status_code == 200
+    
+    # Test with a long prompt
+    response = await client.post(
+        "/completion",
+        json={
+            "prompt": "Please explain " + "very detailed " * 100,
+            "max_tokens": 100,
+            "temperature": 0.7
+        }
+    )
+    
+    # Either succeeds or times out gracefully
+    if response.status_code == 504:
+        assert "timed out" in response.json()["detail"].lower()
+    else:
+        assert response.status_code == 200
+        assert "completion" in response.json()
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"]) 
