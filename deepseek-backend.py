@@ -1,5 +1,5 @@
 """
-Search Backend API Service
+Deepseek Backend API Service
 ---------------------------
 
 A FastAPI backend service that integrates with the Deepseek API for text completions.
@@ -57,7 +57,7 @@ License: MIT
 from fastapi import FastAPI, HTTPException # type: ignore
 from pydantic import BaseModel, Field, validator # type: ignore
 from openai import OpenAI # type: ignore
-from groq import Groq # type: ignore
+from groq import Groq  # type: ignore
 import os
 from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware # type: ignore
@@ -107,6 +107,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 GUMTREE_IAP_TOKEN = os.getenv("GUMTREE_IAP_TOKEN")
 TIMEOUT = 30.0  # Timeout in seconds for all API calls
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
 # Create logs directory if it doesn't exist
 Path("logs").mkdir(exist_ok=True)
@@ -467,21 +468,24 @@ async def handle_ollama_completion(request: PromptRequest) -> fastapi.responses.
     """Handle completion requests for Ollama instance with streaming support."""
     
     model = "deepseek-r1"
-    OLLAMA_API_URL = "http://localhost:11434/api/generate"
-    
     logger.info("Attempting request to Ollama API")
     
     async def generate():
         try:
             async with httpx.AsyncClient(timeout=TIMEOUT) as client:
                 async with client.stream(
-                    'POST',
-                    OLLAMA_API_URL,
+                    "POST",
+                    f"{OLLAMA_HOST}/api/generate",
                     json={
                         "model": model,
                         "prompt": request.prompt,
-                        "stream": True
-                    }
+                        "stream": True,
+                        "options": {
+                            "num_predict": request.max_tokens,
+                            "temperature": request.temperature
+                        }
+                    },
+                    timeout=TIMEOUT
                 ) as response:
                     if response.status_code != 200:
                         error_msg = f"Ollama API request failed with status {response.status_code}"
@@ -620,4 +624,4 @@ async def shutdown_event():
 if __name__ == "__main__":
     import uvicorn # type: ignore
     logger.info("Starting uvicorn server")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8083)
