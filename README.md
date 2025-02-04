@@ -12,6 +12,17 @@ $ npm run dev
 * [deepseek-frontend](deepseek-frontend.html) - Simple React-based frontend for querying backend built within script tags in html without any support modules.  Stores history of queries along with metadata about the model used which can be exported. Output is rendered as markdown and can be viewed afterwards form the history pane on the left hand side.  Uses React's `useState` for local state.  Uses IndexedDB for persistent storage.  In order to run this frontend assuming the backend is up on port 8083, you just open the [deepseek-frontend](deepseek-frontend.html) file locally in the browser.
 * [test-backend](test-backend.py) - Pytest test code for testing the backend.
 
+## Versions of Deepseek
+A variety of versions of Deepseek are provided via the New Prompt selector:
+<img width="1039" alt="image" src="https://github.com/user-attachments/assets/2665de4e-d55d-4ee8-bf07-4066bd76b8be" />
+The options are as follows:
+* **Deepseek V3** - this is the version Deepseek's V3 chat model provided by HighFlyer through their API documented [here](https://api-docs.deepseek.com/).
+* **Deepseek R1** - this is the version Deepseek's R1 reasoning model provided by HighFlyer through their API documented [here](https://api-docs.deepseek.com/).
+* **Groq Deepseek** - this is a version of Deepseek's R1 reasoning model provided by Groq hosted in their US data centre on specialised hardware.  It's super fast!  See [here](https://console.groq.com/docs/models) for details.
+* **Perplexity Sonar Deepseek** - this is a version of Deepseek's R1 reasoning model provided by Perplexity in the form of their `solar-reasoning` model documented [here](https://docs.perplexity.ai/guides/model-cards).
+* **Ollama Deepseek** - this is Deepseek's R1 reasoning model made available via Ollama meaning it is locally hosted.  Ollama is built into its own Docker container.  See [here](https://ollama.com/library/deepseek-r1) for more details.
+* **Gumtree Deepseek** - tbd
+
 ##  frontend
 ### Prompt pane view
 <img width="1145" alt="image" src="https://github.com/user-attachments/assets/509fc8ba-8091-4fa8-b88a-7742f93be156" />
