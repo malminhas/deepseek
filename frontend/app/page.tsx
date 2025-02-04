@@ -681,7 +681,7 @@ ${item.response}`
         <Button 
           onClick={exportHistory}
           variant="secondary"
-          className="m-2 bg-gray-200 hover:bg-gray-300 w-full justify-start [&>svg]:hidden"
+          className={`m-2 bg-gray-200 hover:bg-gray-300 ${selectedHistoryId === null ? 'bg-blue-100 hover:bg-blue-200' : ''}`}
         >
           Export History
         </Button>
