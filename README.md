@@ -2,10 +2,15 @@
 
 ## Deepseek experiments
 * [deepseek-backend](deepseek-backend.py) - FastAPI backend service that wraps various versions of Deepseek including the V3 and R1 models accessible through their API, a asst R1 model hosted by Groq and a local version available via [Ollama](https://ollama.com/).  A version of Perplexity's [sonar]() reasoning model is also made available for comparison. 
-* [deepseek-frontend](deepseek-frontend.html) - React-based frontend for querying backend.  Now improved to store history along with metadata about the model used.  This can be exported. Output is rendered as markdown and can be viewed afterwards form the history pane on the left hand side.
+* [frontend](frontend) - Modern React-based frontend built with [Tailwind CSS](https://tailwindcss.com/), [Next.js](https://nextjs.org/) and [shadcn](https://ui.shadcn.com/) components. Stores history of queries along with metadata about the model used which can be exported. Output is rendered as markdown and can be viewed afterwards form the history pane on the left hand side.  Uses React's `useState` for local state.  Uses IndexedDB for persistent storage.
+* [deepseek-frontend](deepseek-frontend.html) - Simple React-based frontend for querying backend built within script tags in html without any support modules.  Stores history of queries along with metadata about the model used which can be exported. Output is rendered as markdown and can be viewed afterwards form the history pane on the left hand side.  Uses React's `useState` for local state.  Uses IndexedDB for persistent storage.
 * [test-backend](test-backend.py) - Pytest test code for testing the backend.
 
-##  Screenshots
+
+##  frontend
+<img width="1145" alt="image" src="https://github.com/user-attachments/assets/dba531cd-2bc9-44a7-82c8-8f2717c7e398" />
+
+##  deepseek-frontend
 ### Prompt pane view
 <img width="1507" alt="image" src="https://github.com/user-attachments/assets/6a8cd6a5-b9c8-4263-b317-45af2d2c587c" />
 
