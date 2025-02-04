@@ -2,3 +2,4 @@ __pycache__
 logs
 .terraform
 terraform.tfvars
+terraform.tfstate

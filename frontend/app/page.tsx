@@ -571,11 +571,18 @@ ${item.response}`
         </html>
       `;
 
+      // Create a sanitized filename from the prompt
+      const sanitizedPrompt = item.prompt
+        .replace(/[^a-z0-9]/gi, '_') // Replace invalid chars with underscore
+        .replace(/_+/g, '_')         // Replace multiple underscores with single
+        .substring(0, 50)            // Limit length to 50 chars
+        .trim();                     // Trim any trailing spaces/underscores
+
       const blob = new Blob([htmlContent], { type: 'text/html' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `chat_export_${formattedDate.replace(/\//g, '-')}.html`;
+      link.download = `${sanitizedPrompt}.html`;
       
       document.body.appendChild(link);
       link.click();
@@ -589,66 +596,40 @@ ${item.response}`
   };
 
   const handleExportToPDF = async () => {
-    if (!selectedHistoryId) return;
-    
-    const item = completionHistory.find(item => item.timestamp === selectedHistoryId);
-    if (!item) return;
-
     try {
-      // Dynamically import html2pdf only when needed
       const html2pdf = (await import('html2pdf.js')).default;
       
-      const date = new Date(item.timestamp);
-      const formattedDate = date.toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      });
-      const formattedTime = date.toLocaleTimeString([], { 
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true 
-      });
+      const element = document.getElementById('export-content');
+      if (!element) {
+        throw new Error('Export content not found');
+      }
 
-      const htmlContent = `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; padding: 20px;">
-          <h1 style="color: #333;">${item.prompt}</h1>
-          <div style="background: #f5f5f5; padding: 1rem; margin: 1rem 0; border-radius: 4px;">
-            <div>Model: ${MODELS[item.model as keyof typeof MODELS]}</div>
-            <div>Backend Model: ${MODEL_VALUES[item.model as keyof typeof MODEL_VALUES]}</div>
-            <div>Date: ${formattedDate}</div>
-            <div>Time: ${formattedTime}</div>
-            <div>Duration: ${item.duration.toFixed(2)}s</div>
-          </div>
-          <div style="margin: 1rem 0;">
-            ${DOMPurify.sanitize(marked.parse(item.response))}
-          </div>
-        </div>
-      `;
+      // Get the current history item
+      const item = completionHistory.find(item => item.timestamp === selectedHistoryId);
+      if (!item) {
+        throw new Error('History item not found');
+      }
 
-      // Create a temporary container
-      const element = document.createElement('div');
-      element.innerHTML = htmlContent;
-      document.body.appendChild(element);
+      // Create a sanitized filename from the prompt
+      // Replace invalid filename characters and trim length
+      const sanitizedPrompt = item.prompt
+        .replace(/[^a-z0-9]/gi, '_') // Replace invalid chars with underscore
+        .replace(/_+/g, '_')         // Replace multiple underscores with single
+        .substring(0, 50)            // Limit length to 50 chars
+        .trim();                     // Trim any trailing spaces/underscores
 
-      // Configure PDF options
-      const options = {
-        margin: 10,
-        filename: `chat_export_${formattedDate.replace(/\//g, '-')}.pdf`,
+      const opt = {
+        margin: 1,
+        filename: `${sanitizedPrompt}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2 },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
       };
 
-      // Generate PDF
-      html2pdf().from(element).set(options).save().then(() => {
-        // Cleanup
-        document.body.removeChild(element);
-      });
-
-      console.log('PDF export started');
+      await html2pdf().set(opt).from(element).save();
     } catch (error) {
       console.error('Error exporting to PDF:', error);
+      // Add proper error handling here
     }
   };
 
@@ -700,8 +681,7 @@ ${item.response}`
         <Button 
           onClick={exportHistory}
           variant="secondary"
-          className="m-2 bg-gray-200 hover:bg-gray-300"
-          title="Export History"
+          className="m-2 bg-gray-200 hover:bg-gray-300 w-full justify-start [&>svg]:hidden"
         >
           Export History
         </Button>
@@ -804,6 +784,7 @@ ${item.response}`
 
           {output && (
             <div 
+              id="export-content"
               className="prose prose-sm max-w-none dark:prose-invert [&_.bg-gray-50]:bg-gray-50 [&_.bg-gray-50]:my-4 text-sm"
               dangerouslySetInnerHTML={{ 
                 __html: DOMPurify.sanitize(marked.parse(output)) 
