@@ -8,6 +8,10 @@
 
 
 ##  frontend
+### Prompt pane view
+<img width="1145" alt="image" src="https://github.com/user-attachments/assets/509fc8ba-8091-4fa8-b88a-7742f93be156" />
+
+### History pane view
 <img width="1145" alt="image" src="https://github.com/user-attachments/assets/dba531cd-2bc9-44a7-82c8-8f2717c7e398" />
 
 ##  deepseek-frontend
