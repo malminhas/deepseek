@@ -46,6 +46,17 @@ resource "null_resource" "deepseek_frontend_build" {
   }
 }
 
+# Local build of new frontend image
+resource "null_resource" "deepseek_frontend_new_build" {
+  provisioner "local-exec" {
+    command = "docker build -t deepseek-frontend-new:latest -f ../docker/Dockerfile.frontend-new .."
+  }
+
+  triggers = {
+    always_run = "${timestamp()}"
+  }
+}
+
 # Define a Docker image resource for the backend.
 # Specify the name of the Docker image. Keep the image locally after it's pulled.
 # Depend on the backend build to ensure the image is built before the container is created.
@@ -55,13 +66,21 @@ resource "docker_image" "deepseek_backend" {
   depends_on = [null_resource.deepseek_backend_build]
 }
 
-# Define a Docker image resource for the frontend.
+# Define a Docker image resource for the original frontend
 # Specify the name of the Docker image. Keep the image locally after it's pulled.
 # Depend on the frontend build to ensure the image is built before the container is created.
 resource "docker_image" "deepseek_frontend" {
   name = "deepseek-frontend:latest"
   keep_locally = true
   depends_on = [null_resource.deepseek_frontend_build]
+}
+
+# Define Docker image resource for the new frontend 
+# built using tailwind, nextjs, and shadcn/ui and shadcn/ui-react
+resource "docker_image" "deepseek_frontend_new" {
+  name = "deepseek-frontend-new:latest"
+  keep_locally = true
+  depends_on = [null_resource.deepseek_frontend_new_build]
 }
 
 # Update the Ollama image to use a specific version
@@ -77,7 +96,7 @@ resource "null_resource" "cleanup" {
       docker stop ollama 2>/dev/null || true
       docker rm ollama 2>/dev/null || true
       
-      # Stop and remove other project containers
+      # Stop and remove all project containers
       docker ps -a | grep 'deepseek-' | awk '{print $1}' | xargs -r docker rm -f 2>/dev/null || true
       
       # Get all containers connected to the network
@@ -161,6 +180,26 @@ resource "docker_container" "reviews_frontend" {
   }
 
   # Depend on the backend container to ensure it's running before the frontend container is created.
+  depends_on = [
+    docker_container.deepseek_backend
+  ]
+}
+
+# Container for the new frontend built using 
+# tailwind, nextjs, and shadcn/ui and shadcn/ui-react
+resource "docker_container" "deepseek_frontend_new" {
+  name  = "deepseek-frontend-new"
+  image = docker_image.deepseek_frontend_new.name
+
+  networks_advanced {
+    name = docker_network.deepseek_network.name
+  }
+
+  ports {
+    internal = 8084
+    external = 8084
+  }
+
   depends_on = [
     docker_container.deepseek_backend
   ]

@@ -26,8 +26,8 @@ interface HistoryItem {
 
 const BACKEND_URL = 'http://localhost:8083'
 const MODELS = {
-  chat: 'Deepseek Deepseek V3',
-  reasoner: 'Deepseek Deepseek R1',
+  chat: 'Deepseek V3',
+  reasoner: 'Deepseek R1',
   groq: 'Groq Deepseek R1',
   perplexity: 'Perplexity Sonar Deepseek R1',
   ollama: 'Ollama Deepseek R1',

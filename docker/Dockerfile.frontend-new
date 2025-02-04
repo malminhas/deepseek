@@ -1,0 +1,47 @@
+# Use Node.js LTS (Long Term Support) version
+FROM node:20-slim AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files first to leverage Docker cache
+COPY frontend/package.json frontend/package-lock.json* ./
+
+# Install dependencies with cache and ci for faster, reliable builds
+RUN npm ci
+
+# Copy only the necessary files for the build
+COPY frontend/next.config.js ./
+COPY frontend/tsconfig.json ./
+COPY frontend/public ./public
+COPY frontend/app ./app
+COPY frontend/components ./components
+COPY frontend/lib ./lib
+
+# Build the application with ESLint checks disabled
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+RUN npm run build -- --no-lint
+
+# Production image
+FROM node:20-slim AS runner
+
+WORKDIR /app
+
+# Copy only the necessary files from builder
+COPY --from=builder /app/next.config.js ./
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/public ./public
+
+# Expose port 8084
+EXPOSE 8084
+
+# Set environment variables
+ENV PORT=8084
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Start the application
+CMD ["npm", "start"] 
