@@ -9,7 +9,7 @@ $ uvicorn deepseek-backend:app --reload --host 0.0.0.0 --port 8083
 ```
 $ npm run dev
 ```
-* [deepseek-frontend](deepseek-frontend.html) - Simple React-based frontend for querying backend built within script tags in html without any support modules.  Stores history of queries along with metadata about the model used which can be exported. Output is rendered as markdown and can be viewed afterwards form the history pane on the left hand side.  Uses React's `useState` for local state.  Uses IndexedDB for persistent storage.  In order to run this frontend assuming the backend is up on port 8083, you just open the [deepseek-frontend](deepseek-frontend.html) file locally in the browser.
+* [deepseek-frontend](deepseek-frontend.html) - Alernative simpler React-based frontend for querying backend built within script tags in html without any support modules.  Stores history of queries along with metadata about the model used which can be exported. Output is rendered as markdown and can be viewed afterwards form the history pane on the left hand side.  Uses React's `useState` for local state.  Uses IndexedDB for persistent storage.  In order to run this frontend assuming the backend is up on port 8083, you just open the [deepseek-frontend](deepseek-frontend.html) file locally in the browser.
 * [test-backend](test-backend.py) - Pytest test code for testing the backend.
 
 ## Versions of Deepseek
