@@ -403,7 +403,7 @@ async def handle_perplexity_completion(request: PromptRequest) -> StreamingRespo
         )
         
         response = await client.chat.completions.create(
-            model="sonar",
+            model="sonar-reasoning",
             messages=[
                 {
                     "role": "system", 
@@ -610,6 +610,31 @@ async def get_completion(request: PromptRequest) -> fastapi.Response:
     except Exception as e:
         logger.exception("Unexpected error during completion request")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+class VersionInfo(BaseModel):
+    version: str = Field(..., description="API version number")
+    author: str = Field(..., description="Author of the API")
+    releaseDate: str = Field(..., description="Release date of current version")
+    license: str = Field(..., description="License type")
+    environment: str = Field(..., description="Current running environment")
+
+@app.get(
+    "/version",
+    response_model=VersionInfo,
+    summary="Get API version information",
+    description="Returns the current version, author, release date and license information",
+    tags=["System Information"]
+)
+async def get_version():
+    """Get the API version information."""
+    logger.info("Version information requested")
+    return {
+        "version": VERSION,
+        "author": AUTHOR,
+        "releaseDate": RELEASE_DATE,
+        "license": LICENSE,
+        "environment": os.getenv('ENV', 'development')
+    }
 
 @app.on_event("startup")
 async def startup_event():

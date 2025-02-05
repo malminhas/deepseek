@@ -14,7 +14,10 @@ import {
 } from "../components/ui/select"
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { FileText, Trash, Download } from 'lucide-react'
+import { FileText, Trash, Download, InfoIcon } from 'lucide-react'
+import { AboutDialog } from "@/components/about-dialog"
+import { Dialog } from "@/components/ui/dialog"
+import { MermaidDiagram } from "@/components/mermaid-diagram"
 
 interface HistoryItem {
   timestamp: number
@@ -73,6 +76,7 @@ export default function Home() {
   const [lastDeletedTimestamp, setLastDeletedTimestamp] = useState<number | null>(null)
   const [sidebarWidth, setSidebarWidth] = useState(256) // 256px = 16rem = w-64 default
   const [isResizing, setIsResizing] = useState(false)
+  const [showAbout, setShowAbout] = useState(false)
 
   // Update the IndexedDB initialization
   useEffect(() => {
@@ -633,166 +637,194 @@ ${item.response}`
     }
   };
 
+  const handleAboutClick = () => {
+    console.log('About button clicked')
+    setShowAbout(true)
+  }
+
   return (
-    <div className="flex h-screen">
-      {/* Sidebar with dynamic width */}
-      <div 
-        className="bg-gray-50 border-r border-gray-200 flex flex-col relative" 
-        style={{ width: sidebarWidth }}
-      >
-        <Button 
-          onClick={() => {
-            setPrompt('')
-            setOutput('')
-            setCompletionTime(null)
-            setSelectedHistoryId(null)
-            setIsHistoryView(false)
-          }}
-          variant="secondary"
-          className={`m-2 bg-gray-200 hover:bg-gray-300 ${selectedHistoryId === null ? 'bg-blue-100 hover:bg-blue-200' : ''}`}
+    <>
+      <div className="flex h-screen">
+        {/* Sidebar with dynamic width */}
+        <div 
+          className="bg-gray-50 border-r border-gray-200 flex flex-col relative" 
+          style={{ width: sidebarWidth }}
         >
-          New Prompt
-        </Button>
+          <Button 
+            onClick={() => {
+              setPrompt('')
+              setOutput('')
+              setCompletionTime(null)
+              setSelectedHistoryId(null)
+              setIsHistoryView(false)
+            }}
+            variant="secondary"
+            className={`m-2 bg-gray-200 hover:bg-gray-300 ${selectedHistoryId === null ? 'bg-blue-100 hover:bg-blue-200' : ''}`}
+          >
+            New Prompt
+          </Button>
 
-        <div className="flex-1 overflow-y-auto">
-          {completionHistory.map((item) => (
-            <div 
-              key={item.timestamp}
-              data-timestamp={item.timestamp}
-              className={`p-2 border-b border-gray-200 cursor-pointer text-sm ${
-                selectedHistoryId === item.timestamp 
-                  ? 'bg-blue-100 hover:bg-blue-200' 
-                  : 'hover:bg-gray-100'
-              }`}
-              onClick={() => {
-                setSelectedHistoryId(item.timestamp)
-                setIsHistoryView(true)
-                setPrompt(item.prompt)
-                const content = `# ${item.prompt}\n\n${renderHistoryItem(item)}`
-                setOutput(content)
-                setCompletionTime(item.duration)
-              }}
-            >
-              <div className="truncate">{item.prompt}</div>
-            </div>
-          ))}
+          <div className="flex-1 overflow-y-auto">
+            {completionHistory.map((item) => (
+              <div 
+                key={item.timestamp}
+                data-timestamp={item.timestamp}
+                className={`p-2 border-b border-gray-200 cursor-pointer text-sm ${
+                  selectedHistoryId === item.timestamp 
+                    ? 'bg-blue-100 hover:bg-blue-200' 
+                    : 'hover:bg-gray-100'
+                }`}
+                onClick={() => {
+                  setSelectedHistoryId(item.timestamp)
+                  setIsHistoryView(true)
+                  setPrompt(item.prompt)
+                  const content = `# ${item.prompt}\n\n${renderHistoryItem(item)}`
+                  setOutput(content)
+                  setCompletionTime(item.duration)
+                }}
+              >
+                <div className="truncate">{item.prompt}</div>
+              </div>
+            ))}
+          </div>
+
+          <Button 
+            onClick={exportHistory}
+            variant="secondary"
+            className={`m-2 bg-gray-200 hover:bg-gray-300 ${selectedHistoryId === null ? 'bg-blue-100 hover:bg-blue-200' : ''}`}
+          >
+            Export History
+          </Button>
+
+          {/* Add resize handle */}
+          <div
+            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500 hover:w-1"
+            onMouseDown={startResizing}
+          />
         </div>
 
-        <Button 
-          onClick={exportHistory}
-          variant="secondary"
-          className={`m-2 bg-gray-200 hover:bg-gray-300 ${selectedHistoryId === null ? 'bg-blue-100 hover:bg-blue-200' : ''}`}
-        >
-          Export History
-        </Button>
+        {/* Main Content */}
+        <div className="flex-1 p-6 overflow-y-auto">
+          <div className="max-w-3xl mx-auto space-y-4">
+            {!isHistoryView && (
+              <h1 className="text-3xl font-extrabold mb-4 font-inter">
+                Deepseek Chat
+              </h1>
+            )}
 
-        {/* Add resize handle */}
-        <div
-          className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500 hover:w-1"
-          onMouseDown={startResizing}
-        />
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 p-6 overflow-y-auto">
-        <div className="max-w-3xl mx-auto space-y-4">
-          {isHistoryView && (
-            <div className="absolute top-0 right-0 flex gap-2 p-2">
-              <Button
-                onClick={handleExportToRichText}
-                variant="outline"
-                size="icon"
-                className="hover:bg-blue-100 hover:text-blue-500 transition-colors"
-                title="Export as HTML"
-              >
-                <FileText className="h-4 w-4" />
-              </Button>
-              <Button
-                onClick={handleExportToPDF}
-                variant="outline"
-                size="icon"
-                className="hover:bg-blue-100 hover:text-blue-500 transition-colors"
-                title="Export as PDF"
-              >
-                <Download className="h-4 w-4" />
-              </Button>
-              <Button
-                onClick={() => selectedHistoryId && deleteHistoryItem(selectedHistoryId)}
-                variant="outline"
-                size="icon"
-                className="hover:bg-red-100 hover:text-red-500 transition-colors"
-                title="Delete (Ctrl+Z to undo)"
-              >
-                <Trash className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-
-          {!isHistoryView ? (
-            <>
-              <div className="w-full bg-white">
-                <Select
-                  value={selectedModel}
-                  onValueChange={handleModelChange}
-                >
-                  <SelectTrigger className="w-full bg-white border border-input">
-                    <SelectValue placeholder="Select a model" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white border shadow-md">
-                    {Object.entries(MODELS).map(([value, label]) => (
-                      <SelectItem 
-                        key={value} 
-                        value={value}
-                        className="hover:bg-gray-100"
-                      >
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <Textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Enter your prompt..."
-                className="min-h-[2.5rem] max-h-[2.5rem] resize-none py-2"
-              />
-
-              <div className="flex items-center gap-4">
+            {isHistoryView && (
+              <div className="absolute top-0 right-0 flex gap-2 p-2">
+                <div className="flex justify-between items-center gap-2">
+                  <Button
+                    onClick={handleAboutClick}
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8 hover:bg-blue-100 hover:text-blue-500 transition-colors"
+                  >
+                    <InfoIcon className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    onClick={handleExportToRichText}
+                    variant="outline"
+                    className="hover:bg-blue-100 hover:text-blue-500 transition-colors"
+                    title="Export as HTML"
+                  >
+                    <FileText className="h-4 w-4" />
+                  </Button>
+                </div>
                 <Button
-                  onClick={handleSubmit}
-                  disabled={isLoading || !prompt.trim()}
-                  className="flex items-center gap-2 bg-gray-200 hover:bg-gray-300"
+                  onClick={handleExportToPDF}
+                  variant="outline"
+                  size="icon"
+                  className="hover:bg-blue-100 hover:text-blue-500 transition-colors"
+                  title="Export as PDF"
                 >
-                  {isLoading && (
-                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  )}
-                  {isLoading ? 'Processing...' : 'Get Completion'}
+                  <Download className="h-4 w-4" />
                 </Button>
-                {completionTime !== null && (
-                  <span className="text-sm text-gray-500">
-                    Completed in {completionTime.toFixed(2)}s
-                  </span>
-                )}
+                <Button
+                  onClick={() => selectedHistoryId && deleteHistoryItem(selectedHistoryId)}
+                  variant="outline"
+                  size="icon"
+                  className="hover:bg-red-100 hover:text-red-500 transition-colors"
+                  title="Delete (Ctrl+Z to undo)"
+                >
+                  <Trash className="h-4 w-4" />
+                </Button>
               </div>
-            </>
-          ) : null}
+            )}
 
-          {output && (
-            <div 
-              id="export-content"
-              className="prose prose-sm max-w-none dark:prose-invert [&_.bg-gray-50]:bg-gray-50 [&_.bg-gray-50]:my-4 text-sm"
-              dangerouslySetInnerHTML={{ 
-                __html: DOMPurify.sanitize(marked.parse(output)) 
-              }} 
-            />
-          )}
+            {!isHistoryView ? (
+              <>
+                <div className="w-full bg-white">
+                  <Select
+                    value={selectedModel}
+                    onValueChange={handleModelChange}
+                  >
+                    <SelectTrigger className="w-full bg-white border border-input">
+                      <SelectValue placeholder="Select a model" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white border shadow-md">
+                      {Object.entries(MODELS).map(([value, label]) => (
+                        <SelectItem 
+                          key={value} 
+                          value={value}
+                          className="hover:bg-gray-100"
+                        >
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="Enter your prompt..."
+                  className="min-h-[2.5rem] max-h-[2.5rem] resize-none py-2"
+                />
+
+                <div className="flex items-center gap-4">
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={isLoading || !prompt.trim()}
+                    className="flex items-center gap-2 bg-gray-200 hover:bg-gray-300"
+                  >
+                    {isLoading && (
+                      <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    )}
+                    {isLoading ? 'Processing...' : 'Get Completion'}
+                  </Button>
+                  {completionTime !== null && (
+                    <span className="text-sm text-gray-500">
+                      Completed in {completionTime.toFixed(2)}s
+                    </span>
+                  )}
+                </div>
+              </>
+            ) : null}
+
+            {output && (
+              <div 
+                id="export-content"
+                className="prose prose-sm max-w-none dark:prose-invert [&_.bg-gray-50]:bg-gray-50 [&_.bg-gray-50]:my-4 text-sm"
+                dangerouslySetInnerHTML={{ 
+                  __html: DOMPurify.sanitize(marked.parse(output)) 
+                }} 
+              />
+            )}
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* About Dialog outside the main layout but inside the root component */}
+      <AboutDialog 
+        open={showAbout}
+        onOpenChange={setShowAbout}
+      />
+    </>
   )
 }
