@@ -521,60 +521,84 @@ async def handle_ollama_completion(request: PromptRequest) -> fastapi.responses.
         media_type="text/event-stream"
     )
 
-async def handle_gumtree_completion(request: PromptRequest) -> str:
-    """Handle completion requests for Gumtree's DeepSeek instance."""
+async def handle_gumtree_completion(request: PromptRequest) -> StreamingResponse:
+    """Handle completion requests for Gumtree's DeepSeek instance with streaming support."""
     
-    GUMTREE_API_URL = "https://ai.gum-ops-prod.gumtree.cloud/v1/chat/completions"
+    GUMTREE_API_URL = os.getenv("GUMTREE_API_URL", "http://ai-internal.gum-ops-prod.gumtree.cloud:8000/v1/chat/completions")
     logger.info(f"Attempting request to Gumtree API: {GUMTREE_API_URL}")
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json"
     }
     
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            response = await client.post(
-                GUMTREE_API_URL,
-                headers=headers,
-                json={
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "You are a helpful assistant. Format your responses using markdown. When providing Python code examples, use proper 4-space indentation and format with ```python language identifier. Ensure proper line breaks between sections.",
-                            "name": "system"
-                        },
-                        {
-                            "role": "user",
-                            "content": request.prompt,
-                            "name": "user"
-                        }
-                    ],
-                    "model": "deepseek-r1-8b",
-                    "temperature": request.temperature,
-                    "max_tokens": request.max_tokens
-                }
-            )
-            
-            logger.debug(f"Response status: {response.status_code}")
-            logger.debug(f"Response headers: {response.headers}")
-            
-            if response.status_code == 200:
-                completion_text = response.json()["choices"][0]["message"]["content"]
-                return completion_text
-            
-            error_msg = f"Request failed with status {response.status_code}: {response.text}"
+    async def stream_response():
+        try:
+            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+                async with client.stream(
+                    "POST",
+                    GUMTREE_API_URL,
+                    headers=headers,
+                    json={
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "You are a helpful assistant. Format your responses using markdown.",
+                                "name": "system"
+                            },
+                            {
+                                "role": "user",
+                                "content": request.prompt,
+                                "name": "user"
+                            }
+                        ],
+                        "model": "deepseek-r1-8b",
+                        "temperature": request.temperature,
+                        "max_tokens": request.max_tokens,
+                        "stream": True  # Enable streaming
+                    }
+                ) as response:
+                    if response.status_code != 200:
+                        error_msg = f"Request failed with status {response.status_code}: {response.text}"
+                        logger.warning(error_msg)
+                        yield error_msg
+                        return
+
+                    buffer = ""
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
+                        try:
+                            data = json.loads(line)
+                            if 'choices' in data and len(data['choices']) > 0:
+                                content = data['choices'][0].get('delta', {}).get('content', '')
+                                if content:
+                                    buffer += content
+                                    # Send buffer when we hit a natural break point or accumulated enough characters
+                                    if any(c in buffer for c in ["\n", ".", "!", "?"]) or len(buffer) > 80:
+                                        yield buffer
+                                        buffer = ""
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Failed to parse Gumtree response: {e}")
+                            continue
+
+                    # Send any remaining content in buffer
+                    if buffer:
+                        yield buffer
+
+        except httpx.TimeoutException as e:
+            error_msg = f"Request to Gumtree API timed out after {TIMEOUT} seconds"
             logger.warning(error_msg)
-            raise HTTPException(status_code=response.status_code, detail=error_msg)
+            yield error_msg
             
-    except httpx.TimeoutException as e:
-        error_msg = f"Request to Gumtree API timed out after {TIMEOUT} seconds"
-        logger.warning(error_msg)
-        raise HTTPException(status_code=504, detail=error_msg)
-        
-    except Exception as e:
-        error_msg = f"Unexpected error connecting to Gumtree API: {str(e)}"
-        logger.exception(error_msg)
-        raise HTTPException(status_code=500, detail=error_msg)
+        except Exception as e:
+            error_msg = f"Unexpected error connecting to Gumtree API: {str(e)}"
+            logger.exception(error_msg)
+            yield error_msg
+
+    return StreamingResponse(
+        stream_response(),
+        media_type="text/plain"
+    )
 
 @app.post("/completion")
 async def get_completion(request: PromptRequest) -> fastapi.Response:
@@ -592,7 +616,7 @@ async def get_completion(request: PromptRequest) -> fastapi.Response:
         elif current_model["model"] == ModelName.OLLAMA:
             return await handle_ollama_completion(request)
         elif current_model["model"] == ModelName.GUMTREE:
-            completion_text = await handle_gumtree_completion(request)
+            return await handle_gumtree_completion(request)
         else:
             raise HTTPException(
                 status_code=400,
