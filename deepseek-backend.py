@@ -105,7 +105,7 @@ app.add_middleware(
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
-GUMTREE_IAP_TOKEN = os.getenv("GUMTREE_IAP_TOKEN")
+GUMTREE_API_URL = os.getenv("GUMTREE_API_URL")
 TIMEOUT = 30.0  # Timeout in seconds for all API calls
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
@@ -524,21 +524,17 @@ async def handle_ollama_completion(request: PromptRequest) -> fastapi.responses.
 async def handle_gumtree_completion(request: PromptRequest) -> StreamingResponse:
     """Handle completion requests for Gumtree's DeepSeek instance with streaming support."""
     
-    GUMTREE_API_URL = os.getenv("GUMTREE_API_URL", "http://ai-internal.gum-ops-prod.gumtree.cloud:8000/v1/chat/completions")
-    logger.info(f"Attempting request to Gumtree API: {GUMTREE_API_URL}")
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-    }
-    
-    async def stream_response():
+    if not GUMTREE_API_URL:
+        logger.error("Gumtree API URL not configured")
+        raise HTTPException(status_code=500, detail="Gumtree API URL not configured")
+
+    async def generate():
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-                async with client.stream(
-                    "POST",
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
                     GUMTREE_API_URL,
-                    headers=headers,
                     json={
+                        "model": "deepseek-r1-8b",
                         "messages": [
                             {
                                 "role": "system",
@@ -551,54 +547,47 @@ async def handle_gumtree_completion(request: PromptRequest) -> StreamingResponse
                                 "name": "user"
                             }
                         ],
-                        "model": "deepseek-r1-8b",
                         "temperature": request.temperature,
                         "max_tokens": request.max_tokens,
-                        "stream": True  # Enable streaming
-                    }
-                ) as response:
-                    if response.status_code != 200:
-                        error_msg = f"Request failed with status {response.status_code}: {response.text}"
-                        logger.warning(error_msg)
-                        yield error_msg
-                        return
+                        "stream": True
+                    },
+                    stream=True
+                )
 
-                    buffer = ""
-                    async for line in response.aiter_lines():
-                        if not line:
-                            continue
-                        try:
-                            data = json.loads(line)
-                            if 'choices' in data and len(data['choices']) > 0:
-                                content = data['choices'][0].get('delta', {}).get('content', '')
-                                if content:
-                                    buffer += content
-                                    # Send buffer when we hit a natural break point or accumulated enough characters
-                                    if any(c in buffer for c in ["\n", ".", "!", "?"]) or len(buffer) > 80:
-                                        yield buffer
-                                        buffer = ""
-                        except json.JSONDecodeError as e:
-                            logger.error(f"Failed to parse Gumtree response: {e}")
-                            continue
+                if response.status_code != 200:
+                    error_msg = f"Request failed with status {response.status_code}: {response.text}"
+                    logger.error(error_msg)
+                    yield error_msg
+                    return
 
-                    # Send any remaining content in buffer
-                    if buffer:
-                        yield buffer
+                buffer = ""
+                async for line in response.aiter_lines():
+                    if not line.strip():  # Skip empty lines
+                        continue
 
-        except httpx.TimeoutException as e:
-            error_msg = f"Request to Gumtree API timed out after {TIMEOUT} seconds"
-            logger.warning(error_msg)
-            yield error_msg
-            
+                    try:
+                        data = json.loads(line)
+                        if 'choices' in data and len(data['choices']) > 0:
+                            content = data['choices'][0].get('delta', {}).get('content', '')
+                            if content:
+                                buffer += content
+                                if any(c in buffer for c in ["\n", ".", "!", "?"]) or len(buffer) > 80:
+                                    yield buffer
+                                    buffer = ""
+                    except json.JSONDecodeError as e:
+                        logger.debug(f"Skipping non-JSON line: {line}")
+                        continue
+
+                # Send any remaining content in buffer
+                if buffer:
+                    yield buffer
+
         except Exception as e:
-            error_msg = f"Unexpected error connecting to Gumtree API: {str(e)}"
-            logger.exception(error_msg)
+            error_msg = f"Error connecting to Gumtree API: {str(e)}"
+            logger.error(error_msg)
             yield error_msg
 
-    return StreamingResponse(
-        stream_response(),
-        media_type="text/plain"
-    )
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 @app.post("/completion")
 async def get_completion(request: PromptRequest) -> fastapi.Response:
