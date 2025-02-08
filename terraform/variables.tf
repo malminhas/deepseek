@@ -13,10 +13,10 @@ variable "perplexity_api_key" {
   type        = string
 }
 
-variable "gumtree_iap_token" {
-  description = "IAP token for Gumtree"
-  type        = string
-}
+variable "gumtree_api_url" {
+    description = "API URL for Gumtree"
+    type        = string
+} 
 
 variable "deepseek_backend_port" {
   description = "Port for the backend service"

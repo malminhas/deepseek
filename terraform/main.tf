@@ -147,7 +147,7 @@ resource "docker_container" "deepseek_backend" {
     "DEEPSEEK_API_KEY=${var.deepseek_api_key}",
     "GROQ_API_KEY=${var.groq_api_key}",
     "PERPLEXITY_API_KEY=${var.perplexity_api_key}",
-    "GUMTREE_IAP_TOKEN=${var.gumtree_iap_token}",
+    "GUMTREE_API_URL=${var.gumtree_api_url}",
     "CORS_ORIGINS=http://localhost",
     "OLLAMA_HOST=http://ollama:11434"
   ]

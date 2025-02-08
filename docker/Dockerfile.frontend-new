@@ -10,6 +10,9 @@ COPY frontend/package.json frontend/package-lock.json* ./
 # Install dependencies with cache and ci for faster, reliable builds
 RUN npm ci
 
+# Install additional required dependencies
+RUN npm install @radix-ui/react-dialog mermaid
+
 # Copy only the necessary files for the build
 COPY frontend/next.config.js ./
 COPY frontend/tsconfig.json ./
