@@ -530,8 +530,15 @@ async def handle_gumtree_completion(request: PromptRequest) -> StreamingResponse
 
     async def generate():
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
+            headers = {
+                "Accept": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive"
+            }
+            
+            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+                async with client.stream(
+                    "POST",
                     GUMTREE_API_URL,
                     json={
                         "model": "deepseek-r1-8b",
@@ -551,43 +558,41 @@ async def handle_gumtree_completion(request: PromptRequest) -> StreamingResponse
                         "max_tokens": request.max_tokens,
                         "stream": True
                     },
-                    stream=True
-                )
+                    headers=headers
+                ) as response:
+                    if response.status_code != 200:
+                        error_msg = f"Request failed with status {response.status_code}: {response.text}"
+                        logger.error(error_msg)
+                        yield error_msg
+                        return
 
-                if response.status_code != 200:
-                    error_msg = f"Request failed with status {response.status_code}: {response.text}"
-                    logger.error(error_msg)
-                    yield error_msg
-                    return
-
-                buffer = ""
-                async for line in response.aiter_lines():
-                    if not line.strip():  # Skip empty lines
-                        continue
-
-                    try:
-                        data = json.loads(line)
-                        if 'choices' in data and len(data['choices']) > 0:
-                            content = data['choices'][0].get('delta', {}).get('content', '')
-                            if content:
-                                buffer += content
-                                if any(c in buffer for c in ["\n", ".", "!", "?"]) or len(buffer) > 80:
-                                    yield buffer
-                                    buffer = ""
-                    except json.JSONDecodeError as e:
-                        logger.debug(f"Skipping non-JSON line: {line}")
-                        continue
-
-                # Send any remaining content in buffer
-                if buffer:
-                    yield buffer
+                    buffer = ""
+                    async for line in response.aiter_lines():
+                        if line.startswith("data: "):
+                            try:
+                                data = json.loads(line[6:])  # Skip "data: " prefix
+                                if 'choices' in data and data['choices']:
+                                    content = data['choices'][0].get('delta', {}).get('content', '')
+                                    if content:
+                                        yield content
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Failed to parse JSON: {e}")
+                                continue
 
         except Exception as e:
             error_msg = f"Error connecting to Gumtree API: {str(e)}"
             logger.error(error_msg)
             yield error_msg
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Content-Type": "text/event-stream"
+        }
+    )
 
 @app.post("/completion")
 async def get_completion(request: PromptRequest) -> fastapi.Response:
